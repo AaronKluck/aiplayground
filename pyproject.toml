@@ -1,0 +1,8 @@
+[project]
+name = "aiplayground"
+version = "0.0.1"
+description = "A playground for AI models"
+
+
+[tool.mypy]
+ignore_missing_imports = true
