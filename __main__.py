@@ -12,6 +12,7 @@ BASE_SITE_2 = "https://bozeman.net/"
 BASE_SITE_3 = "https://asu.edu/"
 BASE_SITE_4 = "https://boerneisd.net/"
 
+
 def ai_stuff():
     """
     data, mime = download_file(SAMPLE_DOC_2)
@@ -40,6 +41,7 @@ def ai_stuff():
             "text/html",
         )
     )
+
 
 if __name__ == "__main__":
     # crawler = Crawler("https://www.a2gov.org/")
