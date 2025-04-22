@@ -1,0 +1,9 @@
+# AI
+google-genai
+
+# Crawling
+playwright
+playwright-stealth
+
+# Other
+setuptools # required by playwright-stealth

@@ -175,3 +175,10 @@ cython_debug/
 
 # VS Code
 .vscode
+
+# API key files. These are checked in with bogus data, then added here so that
+# they aren't accidentally committed again.
+**/key.txt
+
+# Mac crap
+.DS_Store
