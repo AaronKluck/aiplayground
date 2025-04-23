@@ -178,3 +178,7 @@ cython_debug/
 
 # Mac crap
 .DS_Store
+
+# Flies produced by running the application
+crawler.db
+test*.html

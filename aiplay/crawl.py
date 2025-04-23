@@ -1,16 +1,24 @@
-from playwright.sync_api import Browser, Page, Playwright, sync_playwright
+from datetime import datetime
+from hashlib import sha3_256
+from playwright.sync_api import (
+    Browser,
+    sync_playwright,
+)
 from playwright._impl._errors import TimeoutError as PlaywrightTimeoutError
-from playwright_stealth import stealth_sync
-import random
-import time
 import threading
 import traceback
 from queue import Queue
 from urllib.parse import urlparse, urljoin, ParseResult
 from urllib.robotparser import RobotFileParser
-from typing import Tuple
 
+from aiplay.db.context import Transaction
+from aiplay.db.link import delete_stale_links
+from aiplay.db.page import list_pages_for_site, upsert_page, delete_stale_pages
+from aiplay.db.site import upsert_site
+from aiplay.db.types import Site, Page
+from aiplay.util.containers import ThreadSafeDict
 from aiplay.util.download import download_file, download_rendered
+from aiplay.util.html import BrowserCtx, clean_page, determine_browser_type, PageCtx
 
 NUM_WORKERS = 8
 
@@ -33,64 +41,66 @@ class Crawler:
         self.robots = RobotFileParser()
         self.robots.set_url(self.robots_url)
 
+        self._site: Site | None = None
+        self.crawl_time = datetime.now()
+
+        self.cache = ThreadSafeDict[str, Page]()
+
+        self.count = 0
+
     def init_robots(self):
         try:
             rendered = download_rendered(self.robots_url)
             self.robots.parse(rendered.splitlines())
-        except Exception as e:
+        except:
             self.robots = RobotFileParser()
 
-    def create_browser(self, p: Playwright, url: str) -> Browser:
-        # Even with "stealth" mode, some sites may block one browser profile
-        # while allowing another. Thus, try all three and stick with whatever
-        # works first.
-        for browser_type in [p.chromium, p.firefox, p.webkit]:
-            browser = browser_type.launch(headless=True)
-            try:
-                page = self.browse_page(browser, url)
+    def init_db(self):
+        with Transaction() as db:
+            self.site = upsert_site(
+                db, Site(url=self.base_url, crawl_time=self.crawl_time)
+            )
+            pages = list_pages_for_site(db, self.site.id)
 
-                # There may be other indicators of access denial, but these
-                # are common.
-                if "Access Denied" in page.title() or "Access Denied" in page.content():
-                    browser.close()
-                    continue
-                return browser
-            except:
-                browser.close()
-                raise
-        raise ValueError("Failed to get rendered HTML from any browser type")
-
-    def browse_page(self, browser: Browser, url: str) -> Page:
-        page = browser.new_page()
-        stealth_sync(page)
-        page.goto(url, timeout=15000, wait_until="networkidle")
-        return page
+        with self.cache as cache:
+            for page in pages:
+                cache[page.url] = page
 
     def robot_allowed(self, url: str) -> bool:
         return self.robots.can_fetch(url, "*")
 
-    def normalize_url(self, url: str) -> Tuple[str, bool]:
+    def normalize_url(self, url: str) -> tuple[str, bool]:
         if not url.startswith("http:") and not url.startswith("https:"):
             return url, False
         parsed: ParseResult = urlparse(url)
-        norm_url: str = parsed._replace(fragment="").geturl()
+
+        # Remove query and fragment for normalization. This removes a whole ton
+        # of effective duplicates. The fragment removal is safest, but the query
+        # removal is more aggressive, since a page might have different content
+        # based on the query string. In practice, however, this seems like a
+        # reasonable tradeoff, given how many useless duplicates we see.
+        norm_url: str = parsed._replace(query="", fragment="").geturl()
         return norm_url, parsed.netloc in ("", self.domain) and self.robot_allowed(
             norm_url
         )
 
     def add_to_queue(self, norm_url: str):
         with self.condition:
+            # Remove this limit when ready for futher testing
+            if self.count > 10:
+                return False
             if norm_url not in self.visited:
                 self.visited.add(norm_url)
                 self.queue.put(norm_url)
                 self.condition.notify_all()
+                self.count += 1
                 return True  # First time seen
         return False  # Already visited
 
-    def worker(self, worker_id: int):
+    def worker(self, worker_id: int) -> None:
         with sync_playwright() as p:
-            browser = self.create_browser(p, self.base_url)
-            try:
+            browser_type = determine_browser_type(p, self.base_url)
+            with BrowserCtx(browser_type) as browser:
                 while True:
                     with self.condition:
                         while self.queue.empty() and self.active_workers > 0:
@@ -105,16 +115,8 @@ class Crawler:
                         self.active_workers += 1
 
                     try:
+                        print(f"== {worker_id} Crawling: {url} ==")
                         self.process_url(worker_id, browser, url)
-
-                        # Random sleep to avoid overwhelming the server. Yes,
-                        # this slows us down, and yes, it's a bit counter-
-                        # intuitive, given that we're also spawning threads,
-                        # but it helps illustrate scale. A "real" product would
-                        # use a more sophisticated approach to avoid hitting
-                        # *specific* servers too often, such that the threads
-                        # would intermingle their requests.
-                        time.sleep(random.uniform(0.25, 0.5))
                     except PlaywrightTimeoutError:
                         print(f"Timeout while crawling {url}")
                     except Exception as e:
@@ -126,8 +128,6 @@ class Crawler:
                             self.queue.task_done()
                             self.active_workers -= 1
                             self.condition.notify_all()
-            finally:
-                browser.close()
 
     def process_url(self, worker_id: int, browser: Browser, url: str) -> None:
         if url.lower().endswith(DOC_EXTENSIONS):
@@ -135,29 +135,64 @@ class Crawler:
             self.process_document(url, data, mime)
             return
 
-        page = self.browse_page(browser, url)
-        print(f"\n== {worker_id} Crawling: {url} ==")
-        print(f"Title: {page.title()}")
+        with PageCtx(browser, url) as ppage:
+            orig_content = ppage.content()
+            clean_page(ppage)
+            clean_content = ppage.content()
 
-        links = page.query_selector_all("a[href]")
-        for link in links:
-            href = link.get_attribute("href")
-            text = link.inner_text().strip()
-            if not href:
-                continue
+            hash = sha3_256(clean_content.encode()).hexdigest()
 
-            norm_url, is_allowed = self.normalize_url(urljoin(url, href))
-            if is_allowed:
-                first_seen = self.add_to_queue(norm_url)
-                if first_seen:
-                    print(f"{worker_id}: [{text}] -> {norm_url}")
+            existing_page = self.cache.get(url)
+            if existing_page and existing_page.hash == hash:
+                print(f"{worker_id}: No changes detected for {url}")
+            else:
+                self.process_page(url, orig_content)
+
+            links = ppage.query_selector_all("a[href]")
+            for link in links:
+                href = link.get_attribute("href")
+                text = link.inner_text().strip()
+                if not href:
+                    continue
+
+                norm_url, is_allowed = self.normalize_url(urljoin(url, href))
+                if is_allowed:
+                    first_seen = self.add_to_queue(norm_url)
+                    if first_seen:
+                        print(f"{worker_id}: [{text}] -> {norm_url}")
+
+        with Transaction() as db:
+            db_page = upsert_page(
+                db,
+                Page(
+                    site_id=self.site.id,
+                    url=url,
+                    hash=hash,
+                    crawl_time=self.crawl_time,
+                ),
+            )
+            self.cache.set(url, db_page)
+
+    def process_page(self, url: str, content: str) -> None:
+        # Placeholder for HTML processing logic
+        print(f"Inspecting HTML content from: {url}")
 
     def process_document(self, url: str, data: bytes, mime: str) -> None:
         # Placeholder for document processing logic
         print(f"Processing document: {url} with MIME type: {mime}")
 
-    def start(self) -> None:
+    @property
+    def site(self) -> Site:
+        assert self._site is not None, "site not initialized"
+        return self._site
+
+    @site.setter
+    def site(self, site: Site) -> None:
+        self._site = site
+
+    def run(self) -> None:
         self.init_robots()
+        self.init_db()
 
         self.add_to_queue(self.seed_url)
 
@@ -173,5 +208,10 @@ class Crawler:
         # Join all threads
         for t in threads:
             t.join()
+
+        # Remove stale pages and links from the database
+        with Transaction() as db:
+            delete_stale_pages(db, self.crawl_time)
+            delete_stale_links(db, self.crawl_time)
 
         print("Crawling complete.")

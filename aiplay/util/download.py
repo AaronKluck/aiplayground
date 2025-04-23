@@ -3,6 +3,8 @@ from playwright_stealth import stealth_sync
 import requests
 from typing import Tuple
 
+from aiplay.util.html import clean_page
+
 
 def download_file(url: str) -> Tuple[bytes, str]:
     """Download a file from a URL."""
@@ -15,7 +17,7 @@ def download_file(url: str) -> Tuple[bytes, str]:
     return response.content, response.headers["Content-Type"]
 
 
-def download_rendered(url: str) -> str:
+def download_rendered(url: str, clean=False) -> str:
     with sync_playwright() as p:
         for browser_type in [p.chromium, p.firefox, p.webkit]:
             browser = browser_type.launch(headless=True)
@@ -23,6 +25,10 @@ def download_rendered(url: str) -> str:
                 page = browser.new_page()
                 stealth_sync(page)
                 page.goto(url, wait_until="networkidle")
+
+                if clean:
+                    # Clean the page of unwanted tags
+                    clean_page(page)
 
                 # Get full rendered HTML
                 rendered_html = page.content()

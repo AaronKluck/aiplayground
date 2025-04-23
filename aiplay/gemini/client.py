@@ -9,7 +9,6 @@ from google.genai.types import (
     GenerateContentConfig,
     PartDict,
 )
-from typing import Optional
 
 from aiplay.gemini.key import GEMINI_API_KEY
 
@@ -21,7 +20,7 @@ _client = genai.Client(api_key=GEMINI_API_KEY)
 
 
 def _generate_content(
-    contents: ContentListUnion | ContentListUnionDict, cache_name: Optional[str]
+    contents: ContentListUnion | ContentListUnionDict, cache_name: str | None
 ) -> str:
     response = _client.models.generate_content(
         model=MODEL_VERSION,
@@ -64,7 +63,7 @@ def cache_inline_file(prompt: str, data: bytes, mime: str, ttl=60) -> str:
     return cache.name
 
 
-def query(prompt: str, cache_name: Optional[str] = None) -> str:
+def query(prompt: str, cache_name: str | None = None) -> str:
     contents: ContentDict = ContentDict(
         parts=[
             PartDict(text=prompt),

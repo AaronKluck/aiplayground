@@ -1,7 +1,9 @@
-from aiplay.util.download import download_file
-from aiplay.util.scrape import get_rendered_html
-from aiplay.gemini.client import cache_inline_file, query, query_inline_file
+from hashlib import sha3_256
+
 from aiplay.crawl import Crawler
+from aiplay.db.schema import create_schema
+from aiplay.gemini.client import cache_inline_file, query, query_inline_file
+from aiplay.util.download import download_file, download_rendered
 
 SAMPLE_DOC_1 = "https://sciotownship.granicus.com/DocumentViewer.php?file=sciotownship_10361e2f7845c52c94ea74f36a70daaa.pdf"
 SAMPLE_DOC_2 = "https://sciotownship.granicus.com/DocumentViewer.php?file=sciotownship_971b781dd3d28b5cb385afec6c5c49c2.pdf"
@@ -27,13 +29,13 @@ def ai_stuff():
         )
     )
     """
-    boze = get_rendered_html(BASE_SITE_2)
+    boze = download_rendered(BASE_SITE_2)
     assert "<h1>Access Denied</h1>" not in boze
 
-    h1 = get_rendered_html(BASE_SITE_1)
-    h3 = get_rendered_html(BASE_SITE_3)
-    h4 = get_rendered_html(BASE_SITE_4)
-    html = get_rendered_html(SAMPLE_SITE_1)
+    h1 = download_rendered(BASE_SITE_1)
+    h3 = download_rendered(BASE_SITE_3)
+    h4 = download_rendered(BASE_SITE_4)
+    html = download_rendered(SAMPLE_SITE_1)
     print(
         query_inline_file(
             "Look at this web content and find contacts. List their name, title, and phone number. If an email address is found, list it, but otherwise put <unknown>.",
@@ -43,7 +45,33 @@ def ai_stuff():
     )
 
 
-if __name__ == "__main__":
+def crawl():
+    create_schema()
+
     # crawler = Crawler("https://www.a2gov.org/")
     crawler = Crawler("https://bozeman.net/")
-    crawler.start()
+    crawler.run()
+
+
+def compare():
+    url_1 = (
+        "https://www.bozeman.net/Home/Components/Calendar/Event/34759/3126?backlist=%2f"
+    )
+    url_2 = "https://www.bozeman.net/Home/Components/Calendar/Event/34759/3126?backlist=%2fhome"
+    url_3 = "https://www.a2gov.org/"
+    url_4 = "https://www.a2gov.org/finance-and-administrative-services/treasury/"
+
+    html_1 = download_rendered(url_4, True)
+    with open("test1.html", "w", encoding="utf-8") as f:
+        f.write(html_1)
+    print(sha3_256(html_1.encode()).hexdigest())
+
+    # try again
+    html_2 = download_rendered(url_4, True)
+    with open("test2.html", "w", encoding="utf-8") as f:
+        f.write(html_2)
+    print(sha3_256(html_2.encode()).hexdigest())
+
+
+if __name__ == "__main__":
+    crawl()
