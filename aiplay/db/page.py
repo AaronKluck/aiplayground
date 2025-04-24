@@ -13,7 +13,7 @@ def upsert_page(db: Cursor, page: Page) -> Page:
             hash = excluded.hash,
             crawl_time = excluded.crawl_time
         RETURNING *
-    """,
+        """,
         (page.site_id, page.url, page.hash, page.crawl_time.isoformat(), page.error),
     )
     row = db.fetchone()
@@ -41,7 +41,13 @@ def update_page_error(db: Cursor, page_id: int, error: str) -> None:
     the page appears as stale.
     """
     db.execute(
-        "UPDATE page SET error = ?, crawl_time = DATETIME(crawl_time, '-1 second') WHERE id = ?",
+        """
+        UPDATE page
+        SET error = ?,
+            crawl_time = DATETIME(crawl_time, '-1 second'),
+            hash = '',
+        WHERE id = ?
+        """,
         (error, page_id),
     )
 

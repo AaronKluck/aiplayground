@@ -64,7 +64,7 @@ class Crawler:
         self.ai_model = AIModel.OPENAI
 
         self.stale_hours = 24
-        self.max_workers = 4
+        self.max_workers = 6
 
         # These are used to heuristically limit how we crawl. For now, they're
         # hardcoded here. Will make them configurable later.

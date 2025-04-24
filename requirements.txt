@@ -6,6 +6,10 @@ openai
 playwright
 playwright-stealth
 
+# API
+fastapi
+uvicorn
+
 # Other
 setuptools # required by playwright-stealth
 retry
