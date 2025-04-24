@@ -1,5 +1,7 @@
+from bs4 import BeautifulSoup, Tag
 from playwright.sync_api import Browser, BrowserType, Page as PlayPage, Playwright
 from playwright_stealth import stealth_sync
+from typing import TypedDict
 
 
 class BrowserCtx:
@@ -26,12 +28,17 @@ class PageCtx:
         self._page.close()
 
 
+class ExtractedLink(TypedDict):
+    url: str
+    text: str
+
+
 def determine_browser_type(p: Playwright, url: str) -> BrowserType:
     """
     Even with "stealth" mode, some sites may block one browser profile while
     allowing another. Thus, try all three and stick with whatever works first.
     """
-    for browser_type in [p.chromium, p.firefox, p.webkit]:
+    for browser_type in [p.chromium, p.webkit, p.firefox]:
         with BrowserCtx(browser_type) as browser:
             with PageCtx(browser, url) as ppage:
                 # There may be other indicators of access denial, but these
@@ -88,3 +95,41 @@ def clean_page(page: PlayPage) -> None:
         }}
     """
     page.evaluate(js)
+
+
+def extract_links(base_url: str, content: str) -> list[ExtractedLink]:
+    soup = BeautifulSoup(content, "html.parser")
+    links: list[ExtractedLink] = []
+    for a in soup.find_all("a", href=True):
+        assert isinstance(a, Tag)
+        text = a.get_text(" ", strip=True)
+        href = a["href"]
+
+        # Skip empty, anchor-only, or junk links
+        if not isinstance(href, str) or href.startswith("#") or not text:
+            continue
+
+        # Make relative links absolute
+        if href.startswith("/"):
+            href = base_url + href
+
+        # Skip non-HTTP links
+        if not href.startswith("http") and not href.startswith("https"):
+            continue
+
+        # Remove query and fragment for normalization. This removes a whole ton
+        # of effective duplicates. The fragment removal is safest, but the query
+        # removal is more aggressive, since a page might have different content
+        # based on the query string. In practice, however, this seems like a
+        # reasonable tradeoff, given how many useless duplicates we see.
+        last_slash = href.rfind("/")
+        last_hash = href.rfind("#")
+        if last_hash > last_slash:
+            href = href[:last_hash]
+        last_question = href.rfind("?")
+        if last_question > last_slash:
+            href = href[:last_question]
+
+        if href and text:
+            links.append({"url": href, "text": text})
+    return links

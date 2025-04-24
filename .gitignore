@@ -180,5 +180,5 @@ cython_debug/
 .DS_Store
 
 # Flies produced by running the application
-crawler.db
+crawler.db*
 test*.html

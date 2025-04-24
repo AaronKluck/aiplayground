@@ -1,6 +1,6 @@
 # Installation / Setup
 1. Set up a fresh Python environment in your shell (optional).
-1. Run `git update-index --assume-unchanged aiplay/gemini/key.txt` so that local changes to this file won't be detected.
+1. Run `git update-index --assume-unchanged aiplay/ai/gemini/key.txt aiplay/ai/openai/key.txt` so that local changes to these files won't be detected.
 1. Visit https://aistudio.google.com/app/apikey and click `Create API key`. Copy the generated value into `aiplay/gemini.key.txt`.
 1. Run `pip install -r requirements.txt`.
 1. Run `pywright install`.

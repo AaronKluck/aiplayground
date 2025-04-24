@@ -1,10 +1,10 @@
 from datetime import datetime
+from sqlite3 import Cursor
 
-from aiplay.db.context import Transaction
 from aiplay.db.types import Site
 
 
-def upsert_site(db: Transaction, site: Site) -> Site:
+def upsert_site(db: Cursor, site: Site) -> Site:
     db.execute(
         """
         INSERT INTO site (url, crawl_time)
@@ -23,7 +23,7 @@ def upsert_site(db: Transaction, site: Site) -> Site:
     )
 
 
-def get_site_by_id(db: Transaction, site_id: int) -> Site | None:
+def get_site_by_id(db: Cursor, site_id: int) -> Site | None:
     db.execute("SELECT * FROM site WHERE id = ?", (site_id,))
     row = db.fetchone()
     return (
@@ -37,7 +37,7 @@ def get_site_by_id(db: Transaction, site_id: int) -> Site | None:
     )
 
 
-def get_site_by_url(db: Transaction, url: str) -> Site | None:
+def get_site_by_url(db: Cursor, url: str) -> Site | None:
     db.execute("SELECT * FROM site WHERE url = ?", (url,))
     row = db.fetchone()
     return (

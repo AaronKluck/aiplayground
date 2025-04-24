@@ -1,14 +1,14 @@
 from datetime import datetime
+from sqlite3 import Cursor
 
-from aiplay.db.context import Transaction
 from aiplay.db.types import Link, Page
 
 
-def upsert_link(db: Transaction, link: Link) -> Link:
+def upsert_link(db: Cursor, link: Link) -> Link:
     db.execute(
         """
-        INSERT INTO link (site_id, page_id, url, score, keywords, crawl_time)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO link (site_id, page_id, url, text, score, keywords, crawl_time)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(site_id, page_id, url) DO UPDATE SET
             score = excluded.score,
             keywords = excluded.keywords,
@@ -19,6 +19,7 @@ def upsert_link(db: Transaction, link: Link) -> Link:
             link.site_id,
             link.page_id,
             link.url,
+            link.text,
             link.score,
             link.keywords,
             link.crawl_time.isoformat(),
@@ -31,13 +32,14 @@ def upsert_link(db: Transaction, link: Link) -> Link:
         site_id=link.site_id,
         page_id=link.page_id,
         url=link.url,
+        text=link.text,
         score=link.score,
         keywords=link.keywords,
         crawl_time=link.crawl_time,
     )
 
 
-def get_link_by_id(db: Transaction, link_id: int) -> Link | None:
+def get_link_by_id(db: Cursor, link_id: int) -> Link | None:
     db.execute("SELECT * FROM link WHERE id = ?", (link_id,))
     row = db.fetchone()
     return (
@@ -46,16 +48,17 @@ def get_link_by_id(db: Transaction, link_id: int) -> Link | None:
             site_id=row[1],
             page_id=row[2],
             url=row[3],
-            score=row[4],
-            keywords=row[5],
-            crawl_time=datetime.fromisoformat(row[6]),
+            text=row[4],
+            score=row[5],
+            keywords=row[6],
+            crawl_time=datetime.fromisoformat(row[7]),
         )
         if row
         else None
     )
 
 
-def list_links_for_site(db: Transaction, site_id: int) -> list[tuple[Page, Link]]:
+def list_links_for_site(db: Cursor, site_id: int) -> list[tuple[Page, Link]]:
     db.execute(
         """
         SELECT
@@ -68,6 +71,7 @@ def list_links_for_site(db: Transaction, site_id: int) -> list[tuple[Page, Link]
             link.site_id AS link_site_id,
             link.page_id AS link_page_id,
             link.url AS link_url,
+            link.text as link_text,
             link.score AS link_score,
             link.keywords AS link_keywords,
             link.crawl_time AS link_crawl_time
@@ -92,16 +96,17 @@ def list_links_for_site(db: Transaction, site_id: int) -> list[tuple[Page, Link]
             site_id=row[6],
             page_id=row[7],
             url=row[8],
-            score=row[9],
-            keywords=row[9],
-            crawl_time=datetime.fromisoformat(row[10]),
+            text=row[9],
+            score=row[10],
+            keywords=row[11],
+            crawl_time=datetime.fromisoformat(row[12]),
         )
         results.append((page, link))
 
     return results
 
 
-def list_links_for_page(db: Transaction, page_id: int) -> list[Link]:
+def list_links_for_page(db: Cursor, page_id: int) -> list[Link]:
     db.execute("SELECT * FROM link WHERE page_id = ?", (page_id,))
     return [
         Link(
@@ -109,14 +114,15 @@ def list_links_for_page(db: Transaction, page_id: int) -> list[Link]:
             site_id=row[1],
             page_id=row[2],
             url=row[3],
-            score=row[4],
-            keywords=row[5],
-            crawl_time=datetime.fromisoformat(row[6]),
+            text=row[4],
+            score=row[5],
+            keywords=row[6],
+            crawl_time=datetime.fromisoformat(row[7]),
         )
         for row in db.fetchall()
     ]
 
 
-def delete_stale_links(db: Transaction, before_time: datetime) -> int:
+def delete_stale_links(db: Cursor, before_time: datetime) -> int:
     db.execute("DELETE FROM link WHERE crawl_time < ?", (before_time.isoformat(),))
-    return db.cursor.rowcount
+    return db.rowcount

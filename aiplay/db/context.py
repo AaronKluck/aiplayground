@@ -7,37 +7,20 @@ DB_FILE = "crawler.db"
 class Transaction:
     def __init__(self, db_path=DB_FILE):
         self.db_path = db_path
-        self.conn: sqlite3.Connection | None = None
-        self._cursor: sqlite3.Cursor | None = None
-
-    def __enter__(self):
-        self.conn = sqlite3.connect(self.db_path)
+        self.conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=10.0)
         self.conn.execute("PRAGMA foreign_keys = ON;")
-        self._cursor = self.conn.cursor()
-        return self
+        self.cursor = self.conn.cursor()
+
+    def __enter__(self) -> sqlite3.Cursor:
+        return self.cursor
 
     def __exit__(self, exc_type, exc_value, traceback):
-        if self.conn:
-            if exc_type is None:
-                self.conn.commit()
-            else:
-                self.conn.rollback()
-            self.cursor.close()
-            self.conn.close()
-
-    @property
-    def cursor(self) -> sqlite3.Cursor:
-        assert self._cursor is not None
-        return self._cursor
-
-    def execute(self, *args, **kwargs) -> None:
-        self.cursor.execute(*args, **kwargs)
-
-    def fetchone(self) -> Any | None:
-        return self.cursor.fetchone()
-
-    def fetchall(self) -> list[Any]:
-        return self.cursor.fetchall()
+        if exc_type is None:
+            self.conn.commit()
+        else:
+            self.conn.rollback()
+        self.cursor.close()
+        self.conn.close()
 
 
 def create_schema(db_path=DB_FILE):

@@ -1,13 +1,17 @@
-from hashlib import sha3_256
-
 from aiplay.crawl import Crawler
 from aiplay.db.schema import create_schema
-from aiplay.gemini.client import cache_inline_file, query, query_inline_file
-from aiplay.util.download import download_file, download_rendered
+from aiplay.ai.inspect import inspect_links
+from aiplay.ai.gemini.base import query_inline_file
+from aiplay.ai.types import AIModel
+from aiplay.util.download import download_rendered
+from aiplay.util.html import extract_links
 
 SAMPLE_DOC_1 = "https://sciotownship.granicus.com/DocumentViewer.php?file=sciotownship_10361e2f7845c52c94ea74f36a70daaa.pdf"
 SAMPLE_DOC_2 = "https://sciotownship.granicus.com/DocumentViewer.php?file=sciotownship_971b781dd3d28b5cb385afec6c5c49c2.pdf"
 SAMPLE_SITE_1 = "https://www.sciotownship.org/community/advanced-components/list-detail-pages/elected-officials"
+SAMPLE_SITE_2 = (
+    "https://www.a2gov.org/parks-and-recreation/give-365/youth-volunteer-opportunities/"
+)
 
 BASE_SITE_1 = "https://www.a2gov.org/"
 BASE_SITE_2 = "https://bozeman.net/"
@@ -46,32 +50,25 @@ def ai_stuff():
 
 
 def crawl():
-    create_schema()
 
-    # crawler = Crawler("https://www.a2gov.org/")
-    crawler = Crawler("https://bozeman.net/")
+    # crawler = Crawler(BASE_SITE_1)  # a2gov
+    # crawler = Crawler(BASE_SITE_2)  # bozeman
+    # crawler = Crawler(BASE_SITE_3)  # asu
+    crawler = Crawler(BASE_SITE_4)  # boerneisd
     crawler.run()
 
 
-def compare():
-    url_1 = (
-        "https://www.bozeman.net/Home/Components/Calendar/Event/34759/3126?backlist=%2f"
-    )
-    url_2 = "https://www.bozeman.net/Home/Components/Calendar/Event/34759/3126?backlist=%2fhome"
-    url_3 = "https://www.a2gov.org/"
-    url_4 = "https://www.a2gov.org/finance-and-administrative-services/treasury/"
-
-    html_1 = download_rendered(url_4, True)
-    with open("test1.html", "w", encoding="utf-8") as f:
-        f.write(html_1)
-    print(sha3_256(html_1.encode()).hexdigest())
-
-    # try again
-    html_2 = download_rendered(url_4, True)
-    with open("test2.html", "w", encoding="utf-8") as f:
-        f.write(html_2)
-    print(sha3_256(html_2.encode()).hexdigest())
+def deconstruct_test():
+    url_4 = BASE_SITE_3
+    html_4 = download_rendered(url_4)
+    with open("test5.html", "w") as f:
+        f.write(html_4)
+    links = extract_links(BASE_SITE_3, html_4)
+    kw_links = inspect_links(AIModel.OPENAI, links)
+    print(kw_links)
 
 
 if __name__ == "__main__":
     crawl()
+    # link_test()
+    # deconstruct_test()

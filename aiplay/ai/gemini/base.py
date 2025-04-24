@@ -9,20 +9,25 @@ from google.genai.types import (
     GenerateContentConfig,
     PartDict,
 )
+import threading
 
-from aiplay.gemini.key import GEMINI_API_KEY
+from aiplay.ai.gemini.key import GEMINI_API_KEY
 
 MODEL_VERSION = "gemini-2.0-flash"
 
-# In a real app, you might not want this to be global, but instantiated per
-# context/conversation.
-_client = genai.Client(api_key=GEMINI_API_KEY)
+_local = threading.local()
+
+
+def _get_client() -> genai.Client:
+    if not hasattr(_local, "client"):
+        setattr(_local, "client", genai.Client(api_key=GEMINI_API_KEY))
+    return getattr(_local, "client")
 
 
 def _generate_content(
     contents: ContentListUnion | ContentListUnionDict, cache_name: str | None
 ) -> str:
-    response = _client.models.generate_content(
+    response = _get_client().models.generate_content(
         model=MODEL_VERSION,
         contents=contents,
         config=GenerateContentConfig(cache_name=cache_name) if cache_name else None,
@@ -41,7 +46,7 @@ def _generate_content(
 def _create_cache(
     prompt: str, contents: ContentListUnion | ContentListUnionDict, ttl: int
 ):
-    return _client.caches.create(
+    return _get_client().caches.create(
         model=MODEL_VERSION,
         config=CreateCachedContentConfig(
             system_instruction=prompt,

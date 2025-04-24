@@ -1,5 +1,6 @@
 # AI
 google-genai
+openai
 
 # Crawling
 playwright
@@ -7,3 +8,4 @@ playwright-stealth
 
 # Other
 setuptools # required by playwright-stealth
+retry

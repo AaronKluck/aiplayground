@@ -16,6 +16,7 @@ class Page:
     url: str
     hash: str
     crawl_time: datetime
+    error: str | None = None
 
 
 @dataclass(kw_only=True)
@@ -24,6 +25,7 @@ class Link:
     site_id: int
     page_id: int
     url: str
+    text: str
     score: float
     keywords: str
     crawl_time: datetime
