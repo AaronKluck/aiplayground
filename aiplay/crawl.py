@@ -267,10 +267,11 @@ class Crawler:
             # Sometimes the AI produces its own keywords. Some are topical,
             # but others are not. We kick those responses back and ask the AI
             # to try agin, but if they *still* come back with extra keywords,
-            # just give them a low weight.
-            if k not in KEYWORDS:
+            # just give them a low weight rather than the configured one.
+            if k in KEYWORDS:
+                kw_sorted.append((k, v * KEYWORDS[k]))
+            else:
                 kw_sorted.append((k, v * 0.25))
-            kw_sorted.append((k, v * KEYWORDS[k]))
         kw_sorted.sort(key=lambda x: x[1], reverse=True)
 
         # The string looks like ;foo;bar;cat;dog;
