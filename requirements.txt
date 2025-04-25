@@ -5,6 +5,7 @@ openai
 # Crawling
 playwright
 playwright-stealth
+beautifulsoup4
 
 # API
 fastapi

@@ -3,7 +3,7 @@
 1. If you checked this out with Git, run `git update-index --assume-unchanged aiplay/ai/openai/key.txt` so that local changes to these files won't be detected.
 1. Get an OpenAI API token and copy the generated value into `aiplay/ai/openai/key.txt`.
 1. Run `pip install -r requirements.txt`.
-1. Run `pywright install`.
+1. Run `playwright install`.
 
 # Running the Crawler
 From the project directory, run `python3 run_crawl.py "https://www.your-base-url.com"`. 
