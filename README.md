@@ -147,6 +147,11 @@ There are many ways that a URL can be different, yet basically refer to the same
 
 ## What I'd Do Different
 
+### Subdomains / Allowed Domains
+I focused mostly (read: almost entirely) on the four suggested sites. But if you point my crawler at, say, https://www.umich.edu, you get very little results. Why? Because U of M goes crazy with subdomains, and my crawler only visits sites on the same domain that it started on.
+
+In hindsight, subdomains, even peer subdomains of the same main domain, should be fine. I also gave some thought (but did not implement) to a per-site allow-list, so that other domains (that aren't subdomains but are nevertheless related) can be crawled to.
+
 ### Link Representation
 One weakness of my implementation is that, while I did a lot to avoid duplicate of a single page (in its processing and representation), I didn't do anything to avoid duplication of links _from different pages_. My justification, as I planned all this out, was that a 
 
