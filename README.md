@@ -1,18 +1,28 @@
 # Installation / Setup
-1. Set up a fresh Python environment in your shell (optional).
-1. Run `git update-index --assume-unchanged aiplay/ai/gemini/key.txt aiplay/ai/openai/key.txt` so that local changes to these files won't be detected.
-1. Visit https://aistudio.google.com/app/apikey and click `Create API key`. Copy the generated value into `aiplay/gemini.key.txt`.
+1. Set up a fresh Python environment in your shell (optional). I used Python 3.13, but most modern versions are probably compatible.
+1. If you checked this out with Git, run `git update-index --assume-unchanged aiplay/ai/openai/key.txt` so that local changes to these files won't be detected.
+1. Get an OpenAI API token and copy the generated value into `aiplay/ai/openai/key.txt`.
 1. Run `pip install -r requirements.txt`.
 1. Run `pywright install`.
 
+# Running the Crawler
+From the project directory, run `python3 run_crawl.py "https://www.your-base-url.com"`. 
+
+There are also a bunch of commandline options that tweak behavior. You can explore them by running `python3 run_crawl.py -h`.
+
+# Running the API
+From the project directory, run `python3 run_api.py`.
+
+This will host the API server at `http://localhost:8000`, which you can play around with via Swagger UI by visiting `http://localhost:8000/docs` in your browser.
 
 # Design
 Taking notes on the shape of the algorithm. At the time I'm starting this, I already have a basic crawler that looks for links *within the same domain* that don't violate `robots.txt` and queues them up to be processed by one of many worker threads.
 
->[!NOTE]
-> So far my biggest headache has been websites that _really don't want to be crawled_ and send back Access Denied pages (the prime example being https://bozeman.net, one of the test websites listed in the challenge.) This was solved by trying multiple different browser drivers (and sticking with the first that works) along with the `playwright_stealth` module to make my headless mode look more real.
+So with that basic crawling pattern done, here's what's next.
 
-So with that basic crawling pattern done, here's what's next. If anything changes, I'll leave the notes here in ~~strikethrough~~ to better show my process.
+> [!NOTE]
+> A note from my future-self: this initial design pattern generally held true. Any big deviations I'll go over in the `Post-Implementation Notes` section.
+
 
 ## Big Idea
 The idea is to store a record of each page visited, along with a hash of its contents. The next time we perform the crawl, these hashes will indicate whether the contents have changed since; if not, then we can skip "processing" of that page, which is to say, we skip asking the AI anything about it, as that's the slowest and most expensive piece of the whole procedure. We still recurse through to child links, because _those_ might have changed.
@@ -83,3 +93,66 @@ it's not an HTTP or HTTPS protocol, it'll be skipped. If it points somewhere out
 
 > [!NOTE]
 > In cases like this data model, where I've added integer primary keys for performance reasons only, I'd consider hiding them from the API layer, such that you access the REST resources via the values in the unique constraints. However, here, those unique values are URLs, which are _very_ awkward to use as REST resources IDs, because you have to URL sanitize them (i.e. escaping all the slashes and junk). So I'll probably use the primary keys in the basic CRUD endpoints. If you want a very distinct, single `site` or `page` but don't know its primary key, I expect that I'll provide a filter on the listing API that will result in 0 or 1 result being returned in the list.
+
+# Post-Implementation Notes
+Now that I'm done, here are some noteworthy things about the process.
+
+## Link-Preprocessing
+I originally thought I'd be sending entire rendered HTML docs to the AI to have it scour for links. What I ended up doing instead is pulling out the raw links along with their visible text and stuffing them into some JSON. This served two purposes.
+
+The first was that it's a lot less for the AI to deal with, which directly translates to lower cost. The second was that I now had a much more consistent document to hash for change detection. If you run the crawler, then run it again immediately against the same site, nearly all the pages detect as unchanged. This gets around _lots_ of the randomness that some sites will put in their pages, like images or even the IDs within HTML tags.
+
+When I first went down this road, I tried also extracting contextual information, i.e. text that was _near_ the link but not the link text itself. The thinking was that you might have a situation where the header of some section might give context clues that were important, or the words preceding the link describe it further. Unfortunately, I wasn't able to get this to work consistently.
+
+## Link Scoring
+I didn't havce a firm idea of this when I wrote the original design above, so here's what I came up with.
+
+You can go read the big prompt I send in `aiplay/ai/inspect.py` for the details, but gist is that I ask the AI to look at each of the links I send it and determine, based on the content of the URL and the visible text of the link, whether any of a set of requested keywords are applicable to that link.
+
+Each keyword gets a score from 0 to 1 based on how applicable it is. 1 means the word (or a plural version of it) was literally present. Less than 1 means some variation of the word, or a related word, was present. I give a few examples, but I largely leave the determination of how "close" something is to a keyword up to the AI.
+
+Any links that have at least one matching keyword are sent back, along with their matching keywords and the scores.
+
+Back in my own code, I now apply weights to those keywords, which are just multipliers that are again between 0 and 1. This way, the AI only has to worry about whether a keyword is relevant to the link and not how relevant a given keyword is to *me*. (Sometimes the AI returns keywords that I didn't feed it, even though I tell it not to. In that case, I allow the keywords through but assign them a low weight of 0.25.)
+
+Now, a whole bunch of different scores isn't particularly useful - we want one score to tell at a glance if a link is important. However, we don't want to just sum them all up - a link with a whole bunch of low-scoring keywords is *not* as good as a link with only a few or even a single high-scoring keyword.
+
+So instead, after applying the weightings, I sort the keywords by score from high to low. Going in order, each contributes less of itself than the previous to the final score. Specifically, the first score contributes its whole value, then the next contributes only half, then the next contributes only a quarter, then the next conributes only an eight, and so on. Even if you had an infinite number of keywords on single link, and they all scored a perfect 1.0 individually, the total score would converge to only 2.0 (because `1 + .5 + .25 + .125 ... ~= 2`).
+
+## Challenges
+Here are some of the unexpected challenges I faced and how I overcame (or sidestepped) them.
+
+### Access Denied
+Just hitting a public webpage with the `requests` library will often yield an "Access Denied" error. Websites don't like non-humans visiting them, so you need to pretend, which I did using `playwright`. This wasn't surprising, but https://www.bozeman.net was extremely resistant to my crawling attempts, even after supplementing with the `playwright-stealth` module.
+
+What finally got around it was attempting to read the site with each of the 3 browser engines `playwright` has available until I found one that works. So that's now one of the first things the crawler does. It visits the site's homepage, determines which browser will work, then uses that for the rest of the run.
+
+### Drupal Links
+When I started crawling https://www.asu.edu/, I was noticing very few links being detected, and my crawl was over way too fast. This ended up being because there aren't actually many `<a href/>` tags on the site. Instead, there's a Drupal config located in a `<script/>` tag, and a JavaScript lib reads it and produces links somehow. If it's on the screen, then it seems like there ought to be a way to explore DOM to find the links it produces, but that's not how I solved it.
+
+Instead, I look for that specific Drupal config (identified by the attributes in the `<script/>`), which always contains JSON. I crawl the JSON looking for things that look like URLs (e.g. starting with "http", "https", or "/"), and then I look _next to that_ for things with field names that might indicate descriptive text.
+
+It's very imperfect, but it works for the ASU edge-case, and I tried it on a few other Drupal sites I could find too.
+
+### Too Many Pages!!!
+There are many ways that a URL can be different, yet basically refer to the same content. This yields wasteful duplicates in my result set. Here are some of the heuristical ways I sought to combat this - each of which is tunable via commandline arguments.
+
+- Maximum URL parameters.
+  - Very often, the URL params have no bearing whatsoever on the link content in a page. They contain tracking information, or sorting order, or any number of other inanities. Yet *sometimes* they're important. So to strike a balance, I let the crawler be configured with how many are allowed, with any remainder stripped off. A max of 1 is often sufficient, as most pages where it matters put the actually important param first, though by default there is no max.
+- Maximum components.
+  - Sometimes there are additional path components that are acting as parameters. This is something you'd want to tune per site, I think; I left the default at a convervative 10.
+- Max depth.
+  - This is how many "steps" away from the homepage you're allowed to get. The vast majority of pages can be gotten to within a couple clicks - certainly those with any links of importance. This also serves to protect against diving down rabbit holes of `?page=1`, `?page=2`, `?page=3`, et cetera.
+
+
+## What I'd Do Different
+
+### Link Representation
+One weakness of my implementation is that, while I did a lot to avoid duplicate of a single page (in its processing and representation), I didn't do anything to avoid duplication of links _from different pages_. My justification, as I planned all this out, was that a 
+
+Ideally, there'd be a single link entity in the database per URL being linked to, and rather than a foreign key to the page that linked to it, a separate table would track that 1:N relation.
+
+### Prompt
+Maybe not _different_, but... I feel like prompt tuning is something I could have spent a lot more time on. It takes a lot of trial and error, and due to the time-limited nature of this little project, I felt my time was better spent on things I could control.
+
+Looking at the results, it usually makes sense, but it sometimes definitely hallucinates, or makes weird decisions, or flat-out disobeys my directives.
