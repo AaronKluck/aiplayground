@@ -112,6 +112,12 @@ def list_pages_for_site(db: Cursor, site_id: int) -> list[Page]:
     ]
 
 
-def delete_stale_pages(db: Cursor, before_time: datetime) -> int:
-    db.execute("DELETE FROM page WHERE crawl_time < ?", (before_time.isoformat(),))
+def delete_stale_pages(db: Cursor, site_id: int, before_time: datetime) -> int:
+    db.execute(
+        "DELETE FROM page WHERE site_id = ? AND crawl_time < ?",
+        (
+            site_id,
+            before_time.isoformat(),
+        ),
+    )
     return db.rowcount

@@ -45,6 +45,7 @@ class ExtractedLink(TypedDict):
     user can click on. I had experimented with including neary contextual text
     as well, but I'm not a DOM manipulation expert, and it was too inconsistent.
     """
+
     url: str
     text: str
 
@@ -169,6 +170,7 @@ def extract_links_from_json(base_url: str, obj: Any) -> list[ExtractedLink]:
     end up with a URL by itself sometimes.
     """
     links: list[ExtractedLink] = []
+    label_words = ("label", "title", "name", "text")
 
     if isinstance(obj, dict):
         for key, value in obj.items():
@@ -182,15 +184,30 @@ def extract_links_from_json(base_url: str, obj: Any) -> list[ExtractedLink]:
                 # find a human-readable label for the link, which is often
                 # present in the same object as the URL.
                 label = ""
-                for obj_key in obj.keys():
-                    if not isinstance(obj_key, str):
-                        continue
-                    for maybe_key in ("text", "label", "title", "name"):
-                        if maybe_key in obj_key.lower() and isinstance(obj[maybe_key], str):
-                            label = obj[maybe_key]
-                            break
-                    if label:
+                # Check for exact matches first
+                for maybe_key in label_words:
+                    if maybe_key in obj and isinstance(obj[maybe_key], str):
+                        label = obj[maybe_key]
                         break
+
+                # If no exact match, check for partial matches
+                if not label:
+                    for obj_key in obj.keys():
+                        if not isinstance(obj_key, str) or not isinstance(
+                            obj[obj_key], str
+                        ):
+                            continue
+
+                        # Check whether the key *contains* one of the words
+                        for maybe_key in label_words:
+                            low_key = obj_key.lower()
+                            # ...Unless it also has "alttext" (which would
+                            # otherwise match "text").
+                            if maybe_key in low_key and "alttext" not in low_key:
+                                label = obj[obj_key]
+                                break
+                        if label:
+                            break
 
                 full_url = urljoin(base_url, value)
                 links.append({"url": full_url, "text": label})

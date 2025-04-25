@@ -381,7 +381,7 @@ class Crawler:
         # Remove stale pages and links from the database
         with Transaction() as db:
             stale_threshold = self.crawl_time - timedelta(hours=self.stale_hours)
-            delete_stale_pages(db, stale_threshold)
-            delete_stale_links(db, stale_threshold)
+            delete_stale_pages(db, self.site.id, stale_threshold)
+            delete_stale_links(db, self.site.id, stale_threshold)
 
         print("Crawling complete.")

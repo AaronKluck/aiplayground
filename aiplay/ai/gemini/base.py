@@ -25,6 +25,7 @@ Nothing in this file is used. I'm keeping it here to illustrate the kind of
 things I was experimenting with early on.
 """
 
+
 def _get_client() -> genai.Client:
     if not hasattr(_local, "client"):
         setattr(_local, "client", genai.Client(api_key=GEMINI_API_KEY))

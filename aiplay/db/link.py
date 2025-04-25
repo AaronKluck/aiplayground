@@ -128,6 +128,12 @@ def list_links_for_page(db: Cursor, page_id: int) -> list[Link]:
     ]
 
 
-def delete_stale_links(db: Cursor, before_time: datetime) -> int:
-    db.execute("DELETE FROM link WHERE crawl_time < ?", (before_time.isoformat(),))
+def delete_stale_links(db: Cursor, site_id: int, before_time: datetime) -> int:
+    db.execute(
+        "DELETE FROM link WHERE site_id = ? AND crawl_time < ?",
+        (
+            site_id,
+            before_time.isoformat(),
+        ),
+    )
     return db.rowcount

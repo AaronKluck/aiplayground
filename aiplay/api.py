@@ -72,18 +72,18 @@ def format_link_row(row: dict) -> dict:
 # -----------------
 # Routes: Site
 # -----------------
-@app.get("/sites", response_model=Site, response_model_exclude_none=True, tags=["site"])
+@app.get(
+    "/sites", response_model=List[Site], response_model_exclude_none=True, tags=["site"]
+)
 def get_site_by_url(limit=100):
     """
     Looks up all sites.
     """
     conn = get_db()
     cur = conn.execute("SELECT * FROM site LIMIT ?", (limit,))
-    row = cur.fetchone()
+    rows = cur.fetchall()
     conn.close()
-    if row is None:
-        raise HTTPException(status_code=404, detail="Site not found")
-    return dict(row)
+    return [dict(row) for row in rows]
 
 
 @app.get(
