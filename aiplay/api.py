@@ -7,7 +7,13 @@ from typing import Optional
 """
 I didn't spend *nearly* as much time on the API as I did on the crawler. In a
 production API, I would want a stronger tie between my models and the database
-tables.
+tables. Ideally, the tables would be generated from models (which could then
+influence the input/output models of the API), and those models would be shared
+between the API and the crawler.
+
+I also prefer async/await mode for API services (which need to handle any number
+of simultaneous requests, each of which spends most of its time blocked on I/O),
+but it was simpler to set up this way.
 """
 
 app = FastAPI()

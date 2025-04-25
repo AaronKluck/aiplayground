@@ -5,6 +5,11 @@ from aiplay.db.types import Link, Page
 
 
 def upsert_link(db: Cursor, link: Link) -> Link:
+    """
+    By doing upserts, we can update the link if it already exists or insert it
+    if it doesn't without having to check if it exists first. The updating of
+    crawl_time means that older links can be removed once they become stale.
+    """
     db.execute(
         """
         INSERT INTO link (site_id, page_id, url, text, score, keywords, crawl_time)

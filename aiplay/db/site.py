@@ -5,6 +5,11 @@ from aiplay.db.types import Site
 
 
 def upsert_site(db: Cursor, site: Site) -> Site:
+    """
+    By doing upserts, we can update the site if it already exists or insert it
+    if it doesn't without having to check if it exists first. The updating of
+    crawl_time is involved with cleaning up stale pages and links.
+    """
     db.execute(
         """
         INSERT INTO site (url, crawl_time)

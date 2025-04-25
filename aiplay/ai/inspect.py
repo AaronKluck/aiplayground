@@ -1,9 +1,8 @@
 import json
 from pydantic import ValidationError
 
-from aiplay.ai.gemini.base import query as gemini_query
 from aiplay.ai.openai.base import openai_query
-from aiplay.ai.types import AIModel, LinkKeywords
+from aiplay.ai.types import LinkKeywords
 from aiplay.util.html import ExtractedLink
 
 # While the prompt asks the AI to provide a weighted score for how close a match
@@ -36,7 +35,7 @@ KEYWORDS = {
 }
 
 
-def inspect_links(model: AIModel, links: list[ExtractedLink]) -> list[LinkKeywords]:
+def inspect_links(links: list[ExtractedLink]) -> list[LinkKeywords]:
     keyword_str = "\n".join([f"- {kw}" for kw in KEYWORDS.keys()])
 
     prompt = (
@@ -97,22 +96,11 @@ other. If it's not similar to any requested keyword, omit without replacement.
         + json.dumps(links)
     )
 
-    """
-    After the JSON output, you may *suggest* keywords that might be relevant to
-    what I'm doing, which is finding links that point to people and departments
-    as well as financial and planning documents (particulalry those that might
-    indicate future spending).
-    """
-
-    if model == AIModel.GEMINI:
-        orig_result = gemini_query(prompt)
-        prev_id = ""
-    elif model == AIModel.OPENAI:
-        orig_result, prev_id = openai_query(prompt)
-    else:
-        raise ValueError(f"Unknown model: {model}")
+    # Query away!
+    orig_result, prev_id = openai_query(prompt)
 
     def parse_result(result: str) -> list[LinkKeywords]:
+        """This is broken out into an inner function for reuse."""
         unparsed = json.loads(result)
 
         if isinstance(unparsed, dict):
@@ -129,23 +117,23 @@ other. If it's not similar to any requested keyword, omit without replacement.
     try:
         kw_links = parse_result(orig_result)
     except json.JSONDecodeError as e:
-        if prev_id:
-            print(f"Error parsing JSON, poking at the model again: {e}")
-            retry_prompt = """
+        # Try as it might, sometimes the model just doesn't return valid JSON.
+        # Ask it to try again without having to repeat the prompt.
+        print(f"Error parsing JSON, poking at the model again: {e}")
+        retry_prompt = """
 The JSON output from the last prompt was not valid. Try the same response again, but with valid JSON.
 """
-            retry_result, prev_id = openai_query(retry_prompt, prev_id)
-            try:
-                kw_links = parse_result(retry_result)
-            except Exception as e:
-                print(f"Retry failed: {e}")
-                raise
-        else:
+        retry_result, prev_id = openai_query(retry_prompt, prev_id)
+        try:
+            kw_links = parse_result(retry_result)
+        except Exception as e:
+            print(f"Retry failed: {e}")
             raise
     except ValidationError as e:
-        if prev_id:
-            print(f"Error validating model, poking at the model again: {e}")
-            retry_prompt = """
+        # Try as it might, sometimes the model just doesn't data in the format
+        # requested. Ask it to try again without having to repeat the prompt.
+        print(f"Error validating model, poking at the model again: {e}")
+        retry_prompt = """
 The response did not match the expected format. Try the same response again, but
 stick to this format, where the "url" and "keywords" keys are required. The keys
 within the "keywords" objects can be anything, but the values should be floating
@@ -157,16 +145,15 @@ Example:
   {{"url": "https://bidding.com", "keywords": {{"bid": 0.9}}}},
 ]
 """
-            retry_result, prev_id = openai_query(retry_prompt, prev_id)
-            try:
-                kw_links = parse_result(retry_result)
-            except Exception as e:
-                print(f"Retry failed: {e}")
-                raise
-        else:
+        retry_result, prev_id = openai_query(retry_prompt, prev_id)
+        try:
+            kw_links = parse_result(retry_result)
+        except Exception as e:
+            print(f"Retry failed: {e}")
             raise
 
     def check_invalid(links: list[LinkKeywords]) -> set[str]:
+        """This is broken out into an inner function for reuse."""
         invalid_keywords: set[str] = set()
         for kw_link in links:
             for kw in kw_link.keywords:
@@ -175,6 +162,11 @@ Example:
         return invalid_keywords
 
     if invalid_keywords := check_invalid(kw_links):
+        # Even though I explicitly tell it to only return the keywords I ask
+        # for, it sometimes returns other keywords. If I ask it to pretty-please
+        # reclassify its keywords as only the requested ones, it does a pretty
+        # good job of it. If there are still some unknown keywords left over,
+        # I allow them through and assign them a lower weighting later on.
         print(f"Unknown keywords, poking at the model again: {invalid_keywords}")
         retry_prompt = f"""
 The JSON output from the last prompt contained keywords that were not in the

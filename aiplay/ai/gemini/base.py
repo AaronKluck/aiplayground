@@ -17,6 +17,13 @@ MODEL_VERSION = "gemini-2.0-flash"
 
 _local = threading.local()
 
+"""
+I originally was using the Gemini model, because you can use it for free. But
+then I ran out of tokens, so I switched over to OpenAI, which I had wanted to
+try anyways.
+Nothing in this file is used. I'm keeping it here to illustrate the kind of
+things I was experimenting with early on.
+"""
 
 def _get_client() -> genai.Client:
     if not hasattr(_local, "client"):

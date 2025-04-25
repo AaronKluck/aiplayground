@@ -5,6 +5,11 @@ from aiplay.db.types import Page
 
 
 def upsert_page(db: Cursor, page: Page) -> Page:
+    """
+    By doing upserts, we can update the page if it already exists or insert it
+    if it doesn't without having to check if it exists first. The updating of
+    crawl_time means that older pages can be removed once they become stale.
+    """
     db.execute(
         """
         INSERT INTO page (site_id, url, hash, crawl_time, error)
@@ -28,24 +33,29 @@ def upsert_page(db: Cursor, page: Page) -> Page:
     )
 
 
-def update_page_crawl_time(db: Cursor, page_id: int, crawl_time: datetime) -> None:
+def update_page_hash(db: Cursor, page_id: int, hash: str) -> None:
+    """
+    Update the hash of a page. This is used to 'complete' a page after it has
+    been processed. If we crash or an error occurs, then the hash will be empty,
+    so the next run will reprocess the page.
+    """
     db.execute(
-        "UPDATE page SET crawl_time = ? WHERE id = ?",
-        (crawl_time.isoformat(), page_id),
+        """
+        UPDATE page SET hash = ? WHERE id = ?
+        """,
+        (hash, page_id),
     )
 
 
 def update_page_error(db: Cursor, page_id: int, error: str) -> None:
     """
     Update the error message for a page. Also decrements the crawl_time so that
-    the page appears as stale.
+    the page appears as ever-so-slightly stale.
     """
     db.execute(
         """
         UPDATE page
-        SET error = ?,
-            crawl_time = DATETIME(crawl_time, '-1 second'),
-            hash = '',
+        SET error = ?, crawl_time = DATETIME(crawl_time, '-1 second')
         WHERE id = ?
         """,
         (error, page_id),

@@ -1,13 +1,15 @@
 from playwright.sync_api import sync_playwright
-from playwright_stealth import stealth_sync
 import requests
 from typing import Tuple
 
-from aiplay.util.html import clean_page
+from aiplay.util.html import determine_browser_type
 
 
 def download_file(url: str) -> Tuple[bytes, str]:
-    """Download a file from a URL."""
+    """
+    Download a file from a URL. Not that useful in practice, because many
+    sites block you if you don't look like a browser.
+    """
 
     response = requests.get(url)
     if response.status_code != 200:
@@ -17,25 +19,10 @@ def download_file(url: str) -> Tuple[bytes, str]:
     return response.content, response.headers["Content-Type"]
 
 
-def download_rendered(url: str, clean=False) -> str:
+def download_rendered(url: str) -> str:
+    """
+    Download a page and return the rendered HTML.
+    """
     with sync_playwright() as p:
-        for browser_type in [p.chromium, p.firefox, p.webkit]:
-            browser = browser_type.launch(headless=True)
-            try:
-                page = browser.new_page()
-                stealth_sync(page)
-                page.goto(url, wait_until="networkidle")
-
-                if clean:
-                    # Clean the page of unwanted tags
-                    clean_page(page)
-
-                # Get full rendered HTML
-                rendered_html = page.content()
-                if "<h1>Access Denied</h1>" in rendered_html:
-                    print(f"Access Denied for {browser_type.name}")
-                    continue
-                return rendered_html
-            finally:
-                browser.close()
-    raise ValueError("Failed to get rendered HTML from any browser type")
+        _, content = determine_browser_type(p, url)
+    return content

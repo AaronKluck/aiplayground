@@ -6,6 +6,11 @@ V = TypeVar("V")
 
 
 class ThreadSafeDict(Generic[K, V]):
+    """
+    A thread-safe dictionary. Thread-safe iteration is exposed via the context
+    manager.
+    """
+
     def __init__(self):
         self._dict: dict[K, V] = {}
         self._lock = threading.Lock()
@@ -43,7 +48,7 @@ class ThreadSafeDict(Generic[K, V]):
         with self._lock:
             return len(self._dict)
 
-    def __enter__(self):
+    def __enter__(self) -> dict[K, V]:
         self._lock.acquire()
         return self._dict
 
