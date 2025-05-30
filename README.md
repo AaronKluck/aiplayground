@@ -1,7 +1,16 @@
+# Post-Mortem
+This project was written within a ~96 hour period for purposes of a coding challenge during an interview process. The purpose of the project was to create a web crawler that would inspect a website for "high value" links, where "high value" was determined with the help of AI based on the presence of keywords on the page being linked from.
+
+Prior to writing this, I had never written a web crawler, nor had I interacted with an LLM programmatically before, so this is _not_ an example of best practices in either of those domains; I had to figure things out as I went along, aided by research, documentation, and asking ChatGPT for help on occasion. Rather, it an example of how I problem-solve and how I can adapt to new technologies.
+
+Ultimately, I didn't get the job. I suspect that my end results weren't that impressive, but that has more to do with my prompt engineering than anything else. Given the context (being new to both aspects of the project) and compressed time frame, I'm quite proud of what I accomplished.
+
+To any future readers with a critical eye: I urge you to pay attention to my inline comments, as there are many places where I mention how I'd do things differently in production code. This README also has a lot of insight on my design process and thoughts on what could be improved.
+
 # Installation / Setup
 1. Set up a fresh Python environment in your shell (optional). I used Python 3.13, but most modern versions are probably compatible.
-1. If you checked this out with Git, run `git update-index --assume-unchanged aiplay/ai/openai/key.txt` so that local changes to these files won't be detected.
-1. Get an OpenAI API token and copy the generated value into `aiplay/ai/openai/key.txt`.
+1. If you checked this out with Git _and have write permissions_, run `git update-index --assume-unchanged aiplay/ai/openai/key.txt` so that local changes to these files won't be detected.
+1. Get an [OpenAI API token](https://platform.openai.com/api-keys) and copy the generated value into `aiplay/ai/openai/key.txt`. (Normally, you'd pass in API keys with envars or a secrets manager, but I wanted this to be as easy to run out of the box as possible, so I'm having it just read from a file.)
 1. Run `pip install -r requirements.txt`.
 1. Run `playwright install`.
 
@@ -79,7 +88,7 @@ The downside of this implementation is that the column can't be indexed effectiv
 site will be grabbed and kept in memory so that the database isn't being constantly spammed.
     - This makes an assumption about scalability. If there are practical memory limits, I might consider processing only chunks of the namespace at a time - say, those with a prefix between "{site}/aaa" and "{site}/baa", alphabetically. Or just loading the first X many from the database to determine the range. Now, this then requires that the pages you _process_ fall into this range as well for it to do any good, so they'd have to be queued up on disk in an indexed fashion. Even then, I foresee this tactic having starvation issues. Not an easy problem - luckily, I don't plan to solve it here.
 - As we read the current page with `playwright`, the rendered content is hashed. If we already know about the current page in memory (i.e. from the aforementioned database query), then we compare the hash. If it's different, or if we didn't already know about the page, then we proceed to the AI inspection step. Otherwise, the page's `crawl_time` is updated in memory and then upserted into the database.
-- If we've deemed that the page will be inspected by AI, then the page's rendered content is sent to Gemini and a series of questions are asked about it to produce a list of relevant links and their scores. These are upserted into the `link` table such that, if it already existed, it simply results in the `score`, `comment`, and `crawl_time` being updated. Finally, we upsert into the `page` table, such that if it already existed, we're merely updating the `hash` and `crawl_time`.
+- If we've deemed that the page will be inspected by AI, then the page's rendered content is sent to OpenAI and a series of questions are asked about it to produce a list of relevant links and their scores. These are upserted into the `link` table such that, if it already existed, it simply results in the `score`, `comment`, and `crawl_time` being updated. Finally, we upsert into the `page` table, such that if it already existed, we're merely updating the `hash` and `crawl_time`.
     - I'm hand-waving over a pretty big piece of complexity here. The prompting and scoring are their own big thing that I'll figure out later. Luckily, that's can all be self-contained, which is why I'm designing the rest of the application around it first.
 - Regardless of whether the page was inspected by AI, the hyperlinks within it will be traversed, producing the next round of URLs to process.
 - If the link has been processed already, it'll be skipped. If 
@@ -146,6 +155,7 @@ There are many ways that a URL can be different, yet basically refer to the same
 
 
 ## What I'd Do Different
+Throughout the repo, I've sprinkled comments on how I might do something a little different in production code. In addition to those, here are some major topics of interest.
 
 ### Subdomains / Allowed Domains
 I focused mostly (read: almost entirely) on the four suggested sites. But if you point my crawler at, say, https://www.umich.edu, you get very little results. Why? Because U of M goes crazy with subdomains, and my crawler only visits sites on the same domain that it started on.
@@ -153,11 +163,20 @@ I focused mostly (read: almost entirely) on the four suggested sites. But if you
 In hindsight, subdomains, even peer subdomains of the same main domain, should be fine. I also gave some thought (but did not implement) to a per-site allow-list, so that other domains (that aren't subdomains but are nevertheless related) can be crawled to.
 
 ### Link Representation
-One weakness of my implementation is that, while I did a lot to avoid duplicate of a single page (in its processing and representation), I didn't do anything to avoid duplication of links _from different pages_. My justification, as I planned all this out, was that a 
+One weakness of my implementation is that, while I did a lot to avoid duplicate of a single page (in its processing and representation), I didn't do anything to avoid duplication of links _from different pages_. My justification, as I planned all this out, was that you might get a different score when linking from different pages, but that was much more relevant when I was attempting to use the contextual text _near_ a link in addition to the link text itself.
 
 Ideally, there'd be a single link entity in the database per URL being linked to, and rather than a foreign key to the page that linked to it, a separate table would track that 1:N relation.
 
-### Prompt
+### Prompt Engineering
 Maybe not _different_, but... I feel like prompt tuning is something I could have spent a lot more time on. It takes a lot of trial and error, and due to the time-limited nature of this little project, I felt my time was better spent on things I could control.
 
 Looking at the results, it usually makes sense, but it sometimes definitely hallucinates, or makes weird decisions, or flat-out disobeys my directives.
+
+## What About Async?
+All the code in this project is synchronous, parallelized through threading. Nowadays, Python supports the async/await syntax made popular by the likes of JavaScript and C#, and I actually really like that way of programming. Here, however, I made the conscious choice to keep it all synchronous.
+
+The crawling and AI inspection process is extremely I/O-bound, which ordinarily makes for a great candidate for using async/await to achieve concurrency. Indeed, the recursive nature of a web crawler could fan out to huge numbers of asynchronous I/O tasks if you wanted to. Unbound recursion isn't practical here, however.
+
+The first consideration is memory - each page crawled to is held in memory for some period of time, and unbound recursion means that more and more pages will be queried at once as time goes on. But even more important is the throttling on the AI API. Especially at the cheap tier I was in, my tokens-per-minute allowance severely limited how many pages I could process at once.
+
+I could have limited processing to a finite number of Tasks (_not_ simply coroutines) that read off a shared queue, but then I would have had to make everything async with no real gain. Instead, I spawned a finite number of threads reading from a queue and kept everything synchronous.

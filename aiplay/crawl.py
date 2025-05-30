@@ -25,7 +25,6 @@ from aiplay.db.schema import create_schema
 from aiplay.db.site import upsert_site
 from aiplay.db.types import Link, Page, Site
 from aiplay.ai.inspect import inspect_links, KEYWORDS, LinkKeywords
-from aiplay.util.containers import ThreadSafeDict
 from aiplay.util.download import download_rendered
 from aiplay.util.html import (
     BrowserCtx,
